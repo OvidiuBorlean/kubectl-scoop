@@ -1,0 +1,69 @@
+#!/bin/bash
+
+if [ "$#" -lt 2 ];
+then
+  echo "Windows Nodes Package Manager"
+  echo "Usage: kubectl scoop nodeName"
+
+fi
+nodeName="$1"
+cat << EOF > ./winscoop.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: windows-scoop-17263
+  name: windows-scoop-17263
+  namespace: default
+spec:
+  nodeName: $1
+  containers:
+  - image: mcr.microsoft.com/windows/nanoserver:ltsc2022
+    imagePullPolicy: Always
+    name: windows-scoop-17263
+    resources: {}
+    volumeMounts:
+    - mountPath: /tmp
+      name: logs
+    command:
+      - powershell
+      - Write-Output "---> Installing scoop...";
+      - irm get.scoop.sh -outfile 'install.ps1';
+      - .\install.ps1 -RunAsAdmin -ScoopDir 'C:\Scoop' -ScoopGlobalDir 'C:\Scoop' -NoProxy;
+      - Write-Output "---> Done";
+      - scoop install netcat;
+      - scoop install tcping;
+      - sleep 600;
+  volumes:
+  - name: logs
+    hostPath:
+      path: /tmp
+      type: Directory
+  dnsPolicy: ClusterFirst
+  hostNetwork: true
+  nodeSelector:
+    kubernetes.io/os: windows
+  restartPolicy: Never
+  securityContext:
+    windowsOptions:
+      hostProcess: true
+      runAsUserName: NT AUTHORITY\SYSTEM
+status: {}
+EOF
+
+echo "Running the Pod"
+kubectl apply -f ./winscoop.yaml
+while true
+do
+  kubectl get pod windows-scoop-17263 | grep Completed > /dev/null
+  if [ $? !=  0 ]
+  then
+     echo "Still working..."
+     sleep 30
+  else
+     kubectl delete pod windows-scoop-17263
+     rm ./winscoop.yaml
+  fi
+done
+fi
